@@ -2,12 +2,21 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Model } from './modal';
 import { useNavigate } from 'react-router-dom';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid'
+import NotificationSchedulerService from './NotificationSchedulerService';
+import { SuccessToast } from './Toast/Success';
+
+
 
 interface Todo {
   id: number;
   title: string;
   description: string;
   isCompleted: boolean;
+  dueDate: Date;
+  reminderTime: string
+  reminderDays: Array
 }
 
 export const Todos = () => {
@@ -19,10 +28,14 @@ export const Todos = () => {
   const [completedTodos, setCompletedTodos] = useState<Todo[]>([]);
   const [allTasksCount, setAllTasksCount] = useState(0);
   const [completedTasksCount, setCompletedTasksCount] = useState(0);
-  const [title, settitle] = useState("All Task")
+  const [title, settitle] = useState("All Task");
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const navigate = useNavigate();
 
   const fetchTodos = () => {
+    const notificationSchedulerService = NotificationSchedulerService();
+
     axios.get('http://localhost:3000/api/v1/todos', {
       withCredentials: true,
       headers: {
@@ -33,18 +46,59 @@ export const Todos = () => {
         const allTodos = response.data;
         setTodos(allTodos);
         setAllTasksCount(allTodos.length);
-        const completed = allTodos.filter(todo => todo.isCompleted);
-        setCompletedTodos(completed);
-        setCompletedTasksCount(completed.length);
+
+        allTodos.forEach(task => {
+          let dueDate = new Date(task.dueDate).toDateString()+' '+"09:00"
+          let dueDateTimestamp = new Date(dueDate).getTime()
+          notificationSchedulerService.scheduleNotification(`Task Reminder: ${task.title}`,{
+            body: `Description: ${task.description}`
+          }, dueDateTimestamp);
+
+          const reminderDays = task.reminderDays.map(day => getDayNumber(day.toLowerCase()));
+          const reminderTime = task.reminderTime || '00:00:00';
+        
+          // Calculate reminder date and time for each reminder day
+          reminderDays.forEach(day => {
+            const reminderDate = new Date();
+            const today = new Date(); // Get today's date
+            const dayDiff = (day - today.getDay() + 7) % 7; // Calculate days until next occurrence of reminder day
+            reminderDate.setDate(reminderDate.getDate() + dayDiff); // Set reminder date to next occurrence of reminder day
+            const [hours, minutes, seconds] = reminderTime.split(':');
+            reminderDate.setHours(parseInt(hours));
+            reminderDate.setMinutes(parseInt(minutes));
+          
+            notificationSchedulerService.scheduleNotification(`Task Reminder: ${task.title}`, {
+              body: `Description: ${task.description}`
+            }, reminderDate.getTime());
+          });
+        });
+        
+        // Function to convert weekday strings to numeric values
+        function getDayNumber(day) {
+          const daysMap = {
+            sunday: 0,
+            monday: 1,
+            tuesday: 2,
+            wednesday: 3,
+            thursday: 4,
+            friday: 5,
+            saturday: 6
+          };
+          return daysMap[day];
+        }
+       
       })
       .catch(error => {
         console.error('Error fetching todos:', error);
         navigate('/signin');
       });
-  };
-
-  useEffect(() => {
-    fetchTodos();
+      if (Notification.permission !== 'granted') {
+        Notification.requestPermission();
+      }
+    };
+    
+    useEffect(() => {
+      fetchTodos();
   }, []);
 
   const handleSignOut = async () => {
@@ -114,15 +168,30 @@ export const Todos = () => {
   };
 
   const handleAllTasksClick = () => {
+    setShowCalendar(false); // Set state to true to render calendar
     settitle("All Tasks")
-    setTodos(todos);
-    setModalTitle('All tasks');
+    // setTodos(todos);
+    // setModalTitle('All tasks');
   };
 
   const handleCompletedTasksClick = () => {
     settitle('Completed tasks')
     setTodos(completedTodos);
     setModalTitle('Completed tasks');
+  };
+
+  const handleCalendarViewClick = () => {
+    const updatedCalendarEvents = todos.map(task => {
+      const startDate = new Date(task.dueDate);
+
+      return {
+        title: task.title,
+        date: startDate.toISOString().split('T')[0],
+      };
+    });
+    setCalendarEvents(updatedCalendarEvents);
+    setShowCalendar(true); // Set state to true to render calendar
+    settitle('Calendar View'); // Set the title
   };
   return (
     <>
@@ -210,6 +279,17 @@ export const Todos = () => {
                 </span>
               </a>
             </li>
+
+            <li>
+              <a
+                href="#"
+                className="flex items-center p-2 text-gray-900 rounded-lg dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 group"
+              >
+                <span className="flex-1 ms-3 whitespace-nowrap" onClick={handleCalendarViewClick}>
+                  Calendar View
+                </span>
+              </a>
+            </li>
           </ul>
         </div>
       </aside>
@@ -223,10 +303,22 @@ export const Todos = () => {
             taskTitle={modalTaskData?.title || ''}
             taskDescription={modalTaskData?.description || ''}
             isCompleted={modalTaskData?.isCompleted || false}
+            duedate={modalTaskData?.dueDate || ""}
+            reminderTime={modalTaskData?.reminderTime || ""}
+            reminderDays={modalTaskData?.reminderDays || ""}
             id={modalTaskData?.id || ''}
             onTodoAdded={handleTodoAdded}
           />
           <section>
+          {showCalendar ? ( // Render calendar if showCalendar state is true
+              <FullCalendar
+                plugins={[dayGridPlugin]}
+                initialView="dayGridMonth"
+                weekends={false}
+                events={calendarEvents}
+              />
+            ) : (
+              <>       
             <h1 className="font-medium my-5 text-center sm:text-left sm:my-8 md:text-2xl text-lg dark:text-slate-200">
             {title} ({title === "All Tasks" ? allTasksCount : completedTasksCount})
             </h1>
@@ -304,6 +396,8 @@ export const Todos = () => {
                 </button>
               </li>
             </ul>
+              </>
+           )}
           </section>
         </div>
       </div>

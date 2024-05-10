@@ -19,7 +19,7 @@ export const SignUp = () => {
     } catch (error:any) {
       if (error.response) {
         console.error('Error signing up:', error.response.data);
-        alert('Failed to sign up: ' + error.response.data.error); // Show a more specific error from the server
+        alert('Failed to sign up: ' + JSON.parse(error.response.data.error)[0].message); // Show a more specific error from the server
       } else {
         console.error('Error signing up:', error.message);
         alert('Failed to sign up: ' + error.message); // Fallback error message

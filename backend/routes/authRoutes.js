@@ -3,10 +3,16 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user');
+const { z } = require('zod');
+
+const signupSchema = z.object({
+    email: z.string().email(), // Validate email format
+    password: z.string().min(6), // Validate password length
+  });
 
 router.post('/signup', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = signupSchema.parse(req.body);
         const hashedPassword = await bcrypt.hash(password, 10);
         const newUser = new User({ email, password: hashedPassword });
         await newUser.save();
